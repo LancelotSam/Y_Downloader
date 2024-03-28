@@ -1,0 +1,148 @@
+import tkinter
+import customtkinter
+from pytube import YouTube
+from tkinter import filedialog, Toplevel
+import sqlite3
+
+# Create a new SQLite database or connect to an existing one
+conn = sqlite3.connect('youtube_playlists.db')
+c = conn.cursor()
+
+# Create a table for playlists if it doesn't exist
+c.execute('''CREATE TABLE IF NOT EXISTS playlists
+             (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, links TEXT)''')
+
+def start_download():
+    try:
+        ytLink = link.get()
+        ytObject = YouTube(ytLink, on_progress_callback=on_progress)
+
+        if download_format.get() == "Video":
+            stream = ytObject.streams.get_highest_resolution()
+        elif download_format.get() == "Audio":
+            stream = ytObject.streams.filter(only_audio=True).first()
+
+        # Select download directory
+        download_dir = filedialog.askdirectory()
+        if download_dir:
+            stream.download(download_dir)
+            finishLable.configure(text="Downloaded!")
+        else:
+            finishLable.configure(text="Download Cancelled", text_color="red")
+
+        title.configure(text=ytObject.title, text_color="white")
+
+        # Insert the downloaded video into the playlist
+        c.execute("INSERT INTO playlists (title, links) VALUES (?, ?)", (ytObject.title, ytLink))
+        conn.commit()
+    except Exception as e:
+        print(e)
+        finishLable.configure(text="Download Error!", text_color="red")
+
+# ... (the rest of the code remains the same) ...
+
+def on_progress(stream, chunk, bytes_remaining):
+    total_size = stream.filesize
+    bytes_download = total_size - bytes_remaining
+    percentage_of_completion = bytes_download / total_size * 100
+    per = str(int(percentage_of_completion))
+    pPercentage.configure(text=per + "%")
+    pPercentage.update()
+
+    # Update progress bar
+    progressBar.set(float(percentage_of_completion / 100))
+
+def display_playlist():
+    playlist_window = Toplevel(app)
+    playlist_window.title("Playlist")
+
+    conn = sqlite3.connect('youtube_playlists.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM playlists")
+    playlist = c.fetchall()
+    conn.close()
+
+    if not playlist:
+        label = customtkinter.CTkLabel(playlist_window, text="Playlist is empty", text_color="red")
+        label.pack(padx=10, pady=10)
+    else:
+        for index, item in enumerate(playlist, start=1):
+            title_label = customtkinter.CTkLabel(playlist_window, text=f"{index}. {item[1]}", text_color="gray25")
+            title_label.pack(padx=10, pady=5)
+            link_label = customtkinter.CTkLabel(playlist_window, text=item[2])
+            link_label.pack(padx=10, pady=5)
+
+def restart_app():
+    app.destroy()  # Close the current app window
+    main()  # Restart the app
+
+def main():
+    # System Settings
+    customtkinter.set_appearance_mode("System")
+    customtkinter.set_default_color_theme("green")
+
+    # App frame
+    global app
+    app = customtkinter.CTk()
+    app.geometry("720x520")
+    app.title("YouTube Downloader")
+
+    # Font
+    my_font = customtkinter.CTkFont(family="sans-serif", size=28)
+
+    # Adding UI Elements
+    global title
+    title = customtkinter.CTkLabel(app, text="Insert a YouTube link", font=my_font)
+    title.pack(padx=10, pady=20)
+
+    # Link input
+    url_var = tkinter.StringVar()
+    global link
+    link = customtkinter.CTkEntry(app, width=350, height=40, font=customtkinter.CTkFont(family="sans-serif", size=16), textvariable=url_var)
+    link.pack()
+
+    # Download format selection
+    global download_format
+    download_format = tkinter.StringVar()
+    download_format.set("Video")  # Default selection
+
+    video_radio = customtkinter.CTkRadioButton(app, text="Video", variable=download_format, value="Video")
+    video_radio.pack()
+
+    audio_radio = customtkinter.CTkRadioButton(app, text="Audio", variable=download_format, value="Audio")
+    audio_radio.pack()
+
+    # Finished Downloading
+    global finishLable
+    finishLable = customtkinter.CTkLabel(app, text="")
+    finishLable.pack()
+
+    # Progress percentage
+    global pPercentage
+    pPercentage = customtkinter.CTkLabel(app, text="0%")
+    pPercentage.pack()
+
+    global progressBar
+    progressBar = customtkinter.CTkProgressBar(app, width=400)
+    progressBar.set(0)
+    progressBar.pack(padx=10, pady=10)
+
+    # Download Button
+    download = customtkinter.CTkButton(app, text="Download", command=start_download)
+    download.pack(padx=10, pady=10)
+
+    # Display Playlist Button
+    display_playlist_button = customtkinter.CTkButton(app, text="Display Playlist", command=display_playlist)
+    display_playlist_button.pack(padx=10, pady=10)
+
+    # Refresh Button
+    refresh_button = customtkinter.CTkButton(app, text="Refresh", command=restart_app)
+    refresh_button.pack(padx=10, pady=10)
+
+    app.mainloop()
+
+if __name__ == "__main__":
+    main()
+
+# Close the database connection when the app is closed
+conn.close()
